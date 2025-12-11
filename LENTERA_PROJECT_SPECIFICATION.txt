@@ -1,0 +1,184 @@
+# LENTERA_PROJECT_SPECIFICATION.txt
+# VERSION: 4.0 (Flutter Edition)
+# DESCRIPTION: Comprehensive Architecture for AI Mental Health App (Chat, Call, Mood, Consult)
+
+[1. SYSTEM OVERVIEW]
+TYPE: Monorepo / Hybrid Architecture
+FRONTEND: Flutter (Dart) - Google Material 3 Design
+BACKEND: Python (FastAPI) + Uvicorn
+DATABASE: PostgreSQL (Supabase) + Supabase Realtime
+AI ENGINE: Ollama (LLM), Faster-Whisper (STT), Piper/XTTS (TTS), ChromaDB (RAG)
+INFRASTRUCTURE: Docker Compose (Local/VPS), Supabase Cloud (Auth/DB)
+
+[2. ARCHITECTURE DIAGRAM & DATA FLOW]
+
+(A) CLIENT SIDE (Flutter Mobile)
+    |-- [Dio HTTP Client]  --> Connects to Backend REST API (Auth, History, Uploads, Booking)
+    |-- [WebSocket Channel]--> Connects to Backend /ws/call (Real-time Audio PCM Stream)
+    |-- [Supabase Flutter] --> Connects to Supabase Cloud (Real-time Human Chat, Auth Session)
+    |-- [Flutter Sound]    --> Handles Mic Recording & Audio Playback
+
+(B) SERVER SIDE (FastAPI Gateway)
+    |-- [Router: /api/v1]  --> Handles REST requests
+    |-- [Router: /ws]      --> Handles WebSocket connections (Asyncio)
+    |-- [Service: LLM]     --> Wraps Ollama API (Text Generation)
+    |-- [Service: STT]     --> Wraps Whisper (Audio -> Text)
+    |-- [Service: TTS]     --> Wraps TTS Engine (Text -> Audio)
+    |-- [Service: RAG]     --> Wraps ChromaDB (Context Retrieval)
+
+[3. DATABASE SCHEMA (POSTGRESQL)]
+-- AI Agent Instruction: Use this schema to understand data relationships.
+
+TABLE users {
+  id: uuid (PK),
+  email: varchar,
+  full_name: varchar,
+  avatar_url: varchar,
+  created_at: timestamp
+}
+
+TABLE mood_entries {
+  id: uuid (PK),
+  user_id: uuid (FK -> users.id),
+  mood_rating: int (1-5),
+  mood_tags: jsonb,
+  journal_text: text,
+  audio_url: varchar (Supabase Storage Path),
+  transcription: text,
+  created_at: timestamp
+}
+
+TABLE conversations { -- For AI Chat
+  id: uuid (PK),
+  user_id: uuid (FK),
+  title: varchar,
+  updated_at: timestamp
+}
+
+TABLE messages { -- For AI Chat
+  id: uuid (PK),
+  conversation_id: uuid (FK),
+  role: enum('user', 'assistant'),
+  content: text,
+  created_at: timestamp
+}
+
+TABLE psychologists {
+  id: uuid (PK),
+  name: varchar,
+  specialization: varchar,
+  price_per_session: decimal,
+  is_available: boolean
+}
+
+TABLE bookings {
+  id: uuid (PK),
+  user_id: uuid (FK),
+  psychologist_id: uuid (FK),
+  status: enum('pending', 'paid', 'completed', 'cancelled'),
+  session_time: timestamp,
+  payment_ref_id: varchar
+}
+
+TABLE consultation_chats { -- For Human-to-Human (Supabase Realtime)
+  id: uuid (PK),
+  booking_id: uuid (FK),
+  sender_id: uuid,
+  message_text: text,
+  created_at: timestamp
+}
+
+[4. API CONTRACTS & PROTOCOLS]
+
+(A) WEBSOCKET PROTOCOL (URL: wss://api.domain.com/ws/call/{user_id})
+    -- Client to Server Payload (Binary/JSON):
+       { "type": "audio_chunk", "payload": "<base64_encoded_pcm>" }
+       { "type": "interrupt", "payload": true } 
+
+    -- Server to Client Payload:
+       { "type": "transcript", "text": "Halo, apa kabar?" } 
+       { "type": "audio_stream", "payload": "<base64_encoded_audio>" } 
+
+(B) REST API ENDPOINTS
+    -- Auth managed by Supabase Client directly for login/register.
+    -- Backend syncs via: POST /api/v1/auth/sync-session
+    
+    -- Mood
+       POST /api/v1/mood (Multipart: json_data + audio_file)
+       GET  /api/v1/mood?date=YYYY-MM-DD
+    
+    -- Trivia
+       GET  /api/v1/trivia/generate
+       POST /api/v1/trivia/submit
+       
+    -- Psychology
+       GET  /api/v1/doctors
+       POST /api/v1/booking/create
+       POST /api/v1/payment/webhook
+
+[5. PROJECT FILE STRUCTURE (MONOREPO)]
+
+ROOT/
+├── docker-compose.yml       # Services: ollama, chroma, backend_app
+├── .env.example             # Keys: SUPABASE_URL, PAYMENT_KEY
+│
+├── client/ (Flutter)
+│   ├── android/ & ios/      # Native Configs
+│   ├── assets/              # Images, Fonts
+│   ├── lib/
+│   │   ├── core/
+│   │   │   ├── constants/   # API_URL, Colors
+│   │   │   └── services/
+│   │   │       ├── api_service.dart      # Dio setup
+│   │   │       ├── socket_service.dart   # WebSocket logic
+│   │   │       └── audio_service.dart    # Recorder & Player logic
+│   │   ├── models/          # Dart Data Classes
+│   │   ├── providers/       # State Management (Provider/Riverpod)
+│   │   │   ├── auth_provider.dart
+│   │   │   └── chat_provider.dart
+│   │   ├── ui/
+│   │   │   ├── screens/
+│   │   │   │   ├── ai_call_screen.dart   # Voice Call UI
+│   │   │   │   ├── chat_screen.dart      # Text Chat UI
+│   │   │   │   ├── mood_screen.dart      # Calendar & Journal
+│   │   │   │   └── doctor_screen.dart    # Booking & Payment
+│   │   │   └── widgets/
+│   │   │       ├── audio_visualizer.dart # Waveform Painter
+│   │   │       └── chat_bubble.dart
+│   │   └── main.dart        # Entry Point
+│   ├── pubspec.yaml         # Dependencies (dio, flutter_sound, etc)
+│   └── analysis_options.yaml
+│
+└── server/ (FastAPI)
+    ├── app/
+    │   ├── core/            # Config, Security
+    │   ├── models/          # Pydantic Schemas
+    │   ├── api/
+    │   │   ├── v1/          # Routes: mood, trivia, payments
+    │   │   └── socket.py    # WebSocket Endpoint Logic
+    │   ├── services/
+    │   │   ├── ai_pipeline.py 
+    │   │   ├── stt.py       # Whisper
+    │   │   ├── tts.py       # Piper/XTTS
+    │   │   └── llm.py       # Ollama
+    │   └── main.py
+    ├── requirements.txt
+    └── Dockerfile
+
+[6. IMPLEMENTATION LOGIC RULES]
+
+RULE 1 (Voice Latency): 
+   - WebSocket MUST use asyncio in Python.
+   - Flutter MUST use `StreamBuilder` or socket listeners to play audio chunks immediately as they arrive. Do not buffer the whole sentence.
+
+RULE 2 (Data Consistency):
+   - Auth is handled by `supabase_flutter` package.
+   - Flutter passes JWT token in HTTP Header `Authorization: Bearer <token>` when calling Backend REST API.
+
+RULE 3 (Human Chat):
+   - Use `Supabase.instance.client.channel(...)` in Flutter for human-to-human chat. 
+   - Do NOT route this through the Python Backend to save latency.
+
+RULE 4 (RAG Integration):
+   - Before LLM inference, Python Backend queries ChromaDB.
+   - If relevant psychology docs found, prepend to System Prompt.

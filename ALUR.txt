@@ -1,0 +1,11 @@
+USER (React Native)
+      │
+      ├── [Ketik Teks] ───▶ (HTTP) ───▶ api/v1/chat.py ────┐
+      │                                                    │
+      │                                                    ▼
+      └── [Ngomong] ──────▶ (WSS) ────▶ api/websockets.py ─┴─▶ [LLM SERVICE]
+                                                                   (Otak)
+                                                                     │
+                                                                     ▼
+                                                               [SUPABASE DB]
+                                                               (Ingatan/History)

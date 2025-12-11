@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - ALLOW_RESET=true
+    volumes:
+      - chroma-data:/chroma/.chroma
+
+  backend:
+    image: python:3.11-slim
+    working_dir: /app/server
+    volumes:
+      - ./server:/app/server
+    command: sh -c "pip install -r requirements.txt && uvicorn app.main:app --host 0.0.0.0 --port 8080"
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  ollama-data:
+  chroma-data:

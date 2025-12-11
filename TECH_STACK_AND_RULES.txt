@@ -1,0 +1,31 @@
+# TECH_STACK_AND_RULES.txt
+# CONTEXT: Project "LENTERA" (Flutter Version)
+
+[1. FRONTEND RULES - FLUTTER]
+- FRAMEWORK: Flutter (Latest Stable).
+- LANGUAGE: Dart 3.0+ (Sound Null Safety is MANDATORY).
+- STATE MANAGEMENT: Provider (Recommended for simplicity) or Riverpod.
+- ARCHITECTURE: MVVM (Model - View - ViewModel/Provider).
+- UI STYLING:
+  - Use standard Material 3 Widgets (FilledButton, Card, NavigationBar).
+  - Do NOT use hardcoded hex colors everywhere; define a `AppTheme` class.
+  - Make sure the app is responsive (use MediaQuery if needed).
+- ASYNC: Use `FutureBuilder` or `StreamBuilder` for simple data fetching.
+- CODE STYLE:
+  - Use `const` constructors whenever possible (Performance).
+  - Separate large widgets into smaller files in `lib/ui/widgets`.
+
+[2. BACKEND RULES - PYTHON FASTAPI]
+- FRAMEWORK: FastAPI.
+- ASYNC: All routes must be `async def`.
+- WEBSOCKETS: Handle binary frames for audio data.
+- FORMATTING: PEP8 (Use Black/Ruff formatter).
+
+[3. GENERAL CONVENTIONS]
+- FILE NAMING:
+  - Dart: snake_case (e.g., `chat_screen.dart`, `auth_provider.dart`).
+  - Python: snake_case (e.g., `chat_service.py`).
+  - Classes: PascalCase (e.g., `ChatScreen`, `AuthService`).
+- ERROR HANDLING:
+  - Flutter: Show `ScaffoldMessenger.of(context).showSnackBar` for user errors.
+  - Backend: Return standard HTTP Error Codes (400, 401, 500).

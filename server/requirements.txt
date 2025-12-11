@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+supabase
+python-multipart
+websockets
+requests
+python-dotenv
+pydantic-settings
