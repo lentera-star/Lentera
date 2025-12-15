@@ -1,0 +1,218 @@
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/user_model.dart' as app_models;
+
+/// Authentication state enum
+enum AuthState {
+  initial,
+  loading,
+  authenticated,
+  unauthenticated,
+  error,
+}
+
+/// Authentication provider using Supabase Auth
+class AuthProvider extends ChangeNotifier {
+  AuthState _state = AuthState.initial;
+  app_models.User? _currentUser;
+  String? _errorMessage;
+  
+  final SupabaseClient _supabase = Supabase.instance.client;
+
+  AuthState get state => _state;
+  app_models.User? get currentUser => _currentUser;
+  String? get errorMessage => _errorMessage;
+  bool get isAuthenticated => _state == AuthState.authenticated;
+
+  AuthProvider() {
+    _initialize();
+  }
+
+  /// Initialize and listen to auth state changes
+  void _initialize() {
+    // Check current session
+    final session = _supabase.auth.currentSession;
+    if (session != null) {
+      _loadUserProfile(session.user.id);
+    } else {
+      _state = AuthState.unauthenticated;
+      notifyListeners();
+    }
+
+    // Listen to auth state changes
+    _supabase.auth.onAuthStateChange.listen((data) {
+      final AuthChangeEvent event = data.event;
+      final Session? session = data.session;
+
+      if (event == AuthChangeEvent.signedIn && session != null) {
+        _loadUserProfile(session.user.id);
+      } else if (event == AuthChangeEvent.signedOut) {
+        _currentUser = null;
+        _state = AuthState.unauthenticated;
+        notifyListeners();
+      }
+    });
+  }
+
+  /// Load user profile from database
+  Future<void> _loadUserProfile(String userId) async {
+    try {
+      final response = await _supabase
+          .from('users')
+          .select()
+          .eq('id', userId)
+          .single();
+      
+      _currentUser = app_models.User.fromJson(response);
+      _state = AuthState.authenticated;
+      _errorMessage = null;
+    } catch (e) {
+      debugPrint('Error loading user profile: $e');
+      // User might not exist in users table yet, create one
+      await _createUserProfile(userId);
+    }
+    notifyListeners();
+  }
+
+  /// Create user profile in database
+  Future<void> _createUserProfile(String userId) async {
+    try {
+      final authUser = _supabase.auth.currentUser;
+      if (authUser == null) return;
+
+      final userData = {
+        'id': userId,
+        'email': authUser.email!,
+        'full_name': authUser.userMetadata?['full_name'],
+        'created_at': DateTime.now().toIso8601String(),
+      };
+
+      await _supabase.from('users').insert(userData);
+      _currentUser = app_models.User.fromJson(userData);
+      _state = AuthState.authenticated;
+      _errorMessage = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error creating user profile: $e');
+      _state = AuthState.error;
+      _errorMessage = 'Failed to create user profile';
+      notifyListeners();
+    }
+  }
+
+  /// Sign up with email and password
+  Future<bool> signUp({
+    required String email,
+    required String password,
+    required String fullName,
+  }) async {
+    try {
+      _state = AuthState.loading;
+      _errorMessage = null;
+      notifyListeners();
+
+      final response = await _supabase.auth.signUp(
+        email: email,
+        password: password,
+        data: {'full_name': fullName},
+      );
+
+      if (response.user != null) {
+        // Profile will be created in _loadUserProfile
+        return true;
+      } else {
+        _state = AuthState.error;
+        _errorMessage = 'Sign up failed';
+        notifyListeners();
+        return false;
+      }
+    } on AuthException catch (e) {
+      _state = AuthState.error;
+      _errorMessage = _getAuthErrorMessage(e);
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _state = AuthState.error;
+      _errorMessage = 'An unexpected error occurred';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Sign in with email and password
+  Future<bool> signIn({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      _state = AuthState.loading;
+      _errorMessage = null;
+      notifyListeners();
+
+      await _supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
+      // Profile will be loaded in auth state change listener
+      return true;
+    } on AuthException catch (e) {
+      _state = AuthState.error;
+      _errorMessage = _getAuthErrorMessage(e);
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _state = AuthState.error;
+      _errorMessage = 'An unexpected error occurred';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Sign out
+  Future<void> signOut() async {
+    try {
+      await _supabase.auth.signOut();
+      _currentUser = null;
+      _state = AuthState.unauthenticated;
+      _errorMessage = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error signing out: $e');
+    }
+  }
+
+  /// Reset password
+  Future<bool> resetPassword(String email) async {
+    try {
+      await _supabase.auth.resetPasswordForEmail(email);
+      return true;
+    } catch (e) {
+      debugPrint('Error resetting password: $e');
+      return false;
+    }
+  }
+
+  /// Get user-friendly error message
+  String _getAuthErrorMessage(AuthException e) {
+    switch (e.statusCode) {
+      case '400':
+        if (e.message.contains('already registered')) {
+          return 'Email sudah terdaftar';
+        }
+        return 'Data tidak valid';
+      case '401':
+        return 'Email atau password salah';
+      case '422':
+        return 'Email atau password tidak valid';
+      default:
+        return e.message;
+    }
+  }
+
+  /// Clear error message
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+}
